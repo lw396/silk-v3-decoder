@@ -1,38 +1,9 @@
-/***********************************************************************
-Copyright (c) 2006-2012, Skype Limited. All rights reserved.
-Redistribution and use in source and binary forms, with or without
-modification, (subject to the limitations in the disclaimer below)
-are permitted provided that the following conditions are met:
-- Redistributions of source code must retain the above copyright notice,
-this list of conditions and the following disclaimer.
-- Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
-- Neither the name of Skype Limited, nor the names of specific
-contributors, may be used to endorse or promote products derived from
-this software without specific prior written permission.
-NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S PATENT RIGHTS ARE GRANTED
-BY THIS LICENSE. THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
-CONTRIBUTORS ''AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING,
-BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
-FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
-COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
-INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
-NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
-USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
-ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-***********************************************************************/
-
+/* Original code from: https://github.com/kn007/silk-v3-decoder */
+/* Modified by [lw396] on [2024-06-21] */
 
 /*****************************/
 /* Silk decoder test program */
 /*****************************/
-
-#ifdef _WIN32
-#define _CRT_SECURE_NO_DEPRECATE    1
-#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -48,76 +19,15 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define MAX_API_FS_KHZ          48
 #define MAX_LBRR_DELAY          2
 
-#ifdef _SYSTEM_IS_BIG_ENDIAN
-/* Function to convert a little endian int16 to a */
-/* big endian int16 or vica verca                 */
-void swap_endian(
-    SKP_int16       vec[],
-    SKP_int         len
-)
-{
-    SKP_int i;
-    SKP_int16 tmp;
-    SKP_uint8 *p1, *p2;
-
-    for( i = 0; i < len; i++ ){
-        tmp = vec[ i ];
-        p1 = (SKP_uint8 *)&vec[ i ]; p2 = (SKP_uint8 *)&tmp;
-        p1[ 0 ] = p2[ 1 ]; p1[ 1 ] = p2[ 0 ];
-    }
-}
-#endif
-
-#if (defined(_WIN32) || defined(_WINCE))
-#include <windows.h>	/* timer */
-#else    // Linux or Mac
 #include <sys/time.h>
-#endif
-
-#ifdef _WIN32
-
-unsigned long GetHighResolutionTime() /* O: time in usec*/
-{
-    /* Returns a time counter in microsec	*/
-    /* the resolution is platform dependent */
-    /* but is typically 1.62 us resolution  */
-    LARGE_INTEGER lpPerformanceCount;
-    LARGE_INTEGER lpFrequency;
-    QueryPerformanceCounter(&lpPerformanceCount);
-    QueryPerformanceFrequency(&lpFrequency);
-    return (unsigned long)((1000000*(lpPerformanceCount.QuadPart)) / lpFrequency.QuadPart);
-}
-#else    // Linux or Mac
-unsigned long GetHighResolutionTime() /* O: time in usec*/
-{
-    struct timeval tv;
-    gettimeofday(&tv, 0);
-    return((tv.tv_sec*1000000)+(tv.tv_usec));
-}
-#endif // _WIN32
 
 /* Seed for the random number generator, which is used for simulating packet loss */
 static SKP_int32 rand_seed = 1;
 
-static void print_usage(char* argv[]) {
-    printf( "\nVersion:20160922    Build By kn007 (kn007.net)");
-    printf( "\nGithub: https://github.com/kn007/silk-v3-decoder\n");
-    printf( "\nusage: %s in.bit out.pcm [settings]\n", argv[ 0 ] );
-    printf( "\nin.bit       : Bitstream input to decoder" );
-    printf( "\nout.pcm      : Speech output from decoder" );
-    printf( "\n   settings:" );
-    printf( "\n-Fs_API <Hz> : Sampling rate of output signal in Hz; default: 24000" );
-    printf( "\n-loss <perc> : Simulated packet loss percentage (0-100); default: 0" );
-    printf( "\n-quiet       : Print out just some basic values" );
-    printf( "\n" );
-}
-
-int main( int argc, char* argv[] )
+int decoder( char *input, char *output )
 {
-    unsigned long tottime, starttime;
-    double    filetime;
     size_t    counter;
-    SKP_int32 args, totPackets, i, k;
+    SKP_int32 i, k;
     SKP_int16 ret, len, tot_len;
     SKP_int16 nBytes;
     SKP_uint8 payload[    MAX_BYTES_PER_FRAME * MAX_INPUT_FRAMES * ( MAX_LBRR_DELAY + 1 ) ];
@@ -126,59 +36,27 @@ int main( int argc, char* argv[] )
     SKP_int16 nBytesFEC;
     SKP_int16 nBytesPerPacket[ MAX_LBRR_DELAY + 1 ], totBytes;
     SKP_int16 out[ ( ( FRAME_LENGTH_MS * MAX_API_FS_KHZ ) << 1 ) * MAX_INPUT_FRAMES ], *outPtr;
-    char      speechOutFileName[ 150 ], bitInFileName[ 150 ];
+    char      speechOutFileName[ 300 ], bitInFileName[ 300 ];
     FILE      *bitInFile, *speechOutFile;
-    SKP_int32 packetSize_ms=0, API_Fs_Hz = 0;
+    SKP_int32 API_Fs_Hz = 0;
     SKP_int32 decSizeBytes;
     void      *psDec;
     SKP_float loss_prob;
     SKP_int32 frames, lost, quiet;
     SKP_SILK_SDK_DecControlStruct DecControl;
 
-    if( argc < 3 ) {
-        print_usage( argv );
-        exit( 0 );
-    }
-
     /* default settings */
     quiet     = 0;
     loss_prob = 0.0f;
 
     /* get arguments */
-    args = 1;
-    strcpy( bitInFileName, argv[ args ] );
-    args++;
-    strcpy( speechOutFileName, argv[ args ] );
-    args++;
-    while( args < argc ) {
-        if( SKP_STR_CASEINSENSITIVE_COMPARE( argv[ args ], "-loss" ) == 0 ) {
-            sscanf( argv[ args + 1 ], "%f", &loss_prob );
-            args += 2;
-        } else if( SKP_STR_CASEINSENSITIVE_COMPARE( argv[ args ], "-Fs_API" ) == 0 ) {
-            sscanf( argv[ args + 1 ], "%d", &API_Fs_Hz );
-            args += 2;
-        } else if( SKP_STR_CASEINSENSITIVE_COMPARE( argv[ args ], "-quiet" ) == 0 ) {
-            quiet = 1;
-            args++;
-        } else {
-            printf( "Error: unrecognized setting: %s\n\n", argv[ args ] );
-            print_usage( argv );
-            exit( 0 );
-        }
-    }
-
-    if( !quiet ) {
-        printf("********** Silk Decoder (Fixed Point) v %s ********************\n", SKP_Silk_SDK_get_version());
-        printf("********** Compiled for %d bit cpu *******************************\n", (int)sizeof(void*) * 8 );
-        printf( "Input:                       %s\n", bitInFileName );
-        printf( "Output:                      %s\n", speechOutFileName );
-    }
+    strcpy( bitInFileName, input );
+    strcpy( speechOutFileName, output );
 
     /* Open files */
     bitInFile = fopen( bitInFileName, "rb" );
     if( bitInFile == NULL ) {
-        printf( "Error: could not open input file %s\n", bitInFileName );
-        exit( 0 );
+        return 3;
     }
 
     /* Check Silk header */
@@ -190,25 +68,20 @@ int main( int argc, char* argv[] )
            counter = fread( header_buf, sizeof( char ), strlen( "!SILK_V3" ), bitInFile );
            header_buf[ strlen( "!SILK_V3" ) ] = '\0'; /* Terminate with a null character */
            if( strcmp( header_buf, "!SILK_V3" ) != 0 ) {
-               /* Non-equal strings */
-               printf( "Error: Wrong Header %s\n", header_buf );
-               exit( 0 );
+               return 4;
            }
         } else {
            counter = fread( header_buf, sizeof( char ), strlen( "#!SILK_V3" ), bitInFile );
            header_buf[ strlen( "#!SILK_V3" ) ] = '\0'; /* Terminate with a null character */
            if( strcmp( header_buf, "#!SILK_V3" ) != 0 ) {
-               /* Non-equal strings */
-               printf( "Error: Wrong Header %s\n", header_buf );
-               exit( 0 );
+               return 5;
            }
         }
     }
 
     speechOutFile = fopen( speechOutFileName, "wb" );
     if( speechOutFile == NULL ) {
-        printf( "Error: could not open output file %s\n", speechOutFileName );
-        exit( 0 );
+        return 6;
     }
 
     /* Set the samplingrate that is requested for the output */
@@ -223,28 +96,17 @@ int main( int argc, char* argv[] )
 
     /* Create decoder */
     ret = SKP_Silk_SDK_Get_Decoder_Size( &decSizeBytes );
-    if( ret ) {
-        printf( "\nSKP_Silk_SDK_Get_Decoder_Size returned %d", ret );
-    }
     psDec = malloc( decSizeBytes );
 
     /* Reset decoder */
     ret = SKP_Silk_SDK_InitDecoder( psDec );
-    if( ret ) {
-        printf( "\nSKP_Silk_InitDecoder returned %d", ret );
-    }
 
-    totPackets = 0;
-    tottime    = 0;
     payloadEnd = payload;
 
     /* Simulate the jitter buffer holding MAX_FEC_DELAY packets */
     for( i = 0; i < MAX_LBRR_DELAY; i++ ) {
         /* Read payload size */
         counter = fread( &nBytes, sizeof( SKP_int16 ), 1, bitInFile );
-#ifdef _SYSTEM_IS_BIG_ENDIAN
-        swap_endian( &nBytes, 1 );
-#endif
         /* Read payload */
         counter = fread( payloadEnd, sizeof( SKP_uint8 ), nBytes, bitInFile );
 
@@ -253,15 +115,11 @@ int main( int argc, char* argv[] )
         }
         nBytesPerPacket[ i ] = nBytes;
         payloadEnd          += nBytes;
-        totPackets++;
     }
 
     while( 1 ) {
         /* Read payload size */
         counter = fread( &nBytes, sizeof( SKP_int16 ), 1, bitInFile );
-#ifdef _SYSTEM_IS_BIG_ENDIAN
-        swap_endian( &nBytes, 1 );
-#endif
         if( nBytes < 0 || counter < 1 ) {
             break;
         }
@@ -289,9 +147,7 @@ int main( int argc, char* argv[] )
             payloadPtr = payload;
             for( i = 0; i < MAX_LBRR_DELAY; i++ ) {
                 if( nBytesPerPacket[ i + 1 ] > 0 ) {
-                    starttime = GetHighResolutionTime();
                     SKP_Silk_SDK_search_for_LBRR( payloadPtr, nBytesPerPacket[ i + 1 ], ( i + 1 ), FECpayload, &nBytesFEC );
-                    tottime += GetHighResolutionTime() - starttime;
                     if( nBytesFEC > 0 ) {
                         payloadToDec = FECpayload;
                         nBytes = nBytesFEC;
@@ -310,7 +166,6 @@ int main( int argc, char* argv[] )
         /* Silk decoder */
         outPtr = out;
         tot_len = 0;
-        starttime = GetHighResolutionTime();
 
         if( lost == 0 ) {
             /* No Loss: Decode all frames in the packet */
@@ -318,9 +173,6 @@ int main( int argc, char* argv[] )
             do {
                 /* Decode 20 ms */
                 ret = SKP_Silk_SDK_Decode( psDec, &DecControl, 0, payloadToDec, nBytes, outPtr, &len );
-                if( ret ) {
-                    printf( "\nSKP_Silk_SDK_Decode returned %d", ret );
-                }
 
                 frames++;
                 outPtr  += len;
@@ -338,22 +190,12 @@ int main( int argc, char* argv[] )
             for( i = 0; i < DecControl.framesPerPacket; i++ ) {
                 /* Generate 20 ms */
                 ret = SKP_Silk_SDK_Decode( psDec, &DecControl, 1, payloadToDec, nBytes, outPtr, &len );
-                if( ret ) {
-                    printf( "\nSKP_Silk_Decode returned %d", ret );
-                }
+
                 outPtr  += len;
                 tot_len += len;
             }
         }
 
-        packetSize_ms = tot_len / ( DecControl.API_sampleRate / 1000 );
-        tottime += GetHighResolutionTime() - starttime;
-        totPackets++;
-
-        /* Write output to file */
-#ifdef _SYSTEM_IS_BIG_ENDIAN
-        swap_endian( out, tot_len );
-#endif
         fwrite( out, sizeof( SKP_int16 ), tot_len, speechOutFile );
 
         /* Update buffer */
@@ -364,16 +206,11 @@ int main( int argc, char* argv[] )
         /* Check if the received totBytes is valid */
         if (totBytes < 0 || totBytes > sizeof(payload))
         {
-            fprintf( stderr, "\rPackets decoded:             %d", totPackets );
-            return -1;
+            return 7;
         }
         SKP_memmove( payload, &payload[ nBytesPerPacket[ 0 ] ], totBytes * sizeof( SKP_uint8 ) );
         payloadEnd -= nBytesPerPacket[ 0 ];
         SKP_memmove( nBytesPerPacket, &nBytesPerPacket[ 1 ], MAX_LBRR_DELAY * sizeof( SKP_int16 ) );
-
-        if( !quiet ) {
-            fprintf( stderr, "\rPackets decoded:             %d", totPackets );
-        }
     }
 
     /* Empty the recieve buffer */
@@ -386,9 +223,7 @@ int main( int argc, char* argv[] )
             payloadPtr = payload;
             for( i = 0; i < MAX_LBRR_DELAY; i++ ) {
                 if( nBytesPerPacket[ i + 1 ] > 0 ) {
-                    starttime = GetHighResolutionTime();
                     SKP_Silk_SDK_search_for_LBRR( payloadPtr, nBytesPerPacket[ i + 1 ], ( i + 1 ), FECpayload, &nBytesFEC );
-                    tottime += GetHighResolutionTime() - starttime;
                     if( nBytesFEC > 0 ) {
                         payloadToDec = FECpayload;
                         nBytes = nBytesFEC;
@@ -407,7 +242,6 @@ int main( int argc, char* argv[] )
         /* Silk decoder */
         outPtr  = out;
         tot_len = 0;
-        starttime = GetHighResolutionTime();
 
         if( lost == 0 ) {
             /* No loss: Decode all frames in the packet */
@@ -415,9 +249,6 @@ int main( int argc, char* argv[] )
             do {
                 /* Decode 20 ms */
                 ret = SKP_Silk_SDK_Decode( psDec, &DecControl, 0, payloadToDec, nBytes, outPtr, &len );
-                if( ret ) {
-                    printf( "\nSKP_Silk_SDK_Decode returned %d", ret );
-                }
 
                 frames++;
                 outPtr  += len;
@@ -436,22 +267,11 @@ int main( int argc, char* argv[] )
             /* Generate 20 ms */
             for( i = 0; i < DecControl.framesPerPacket; i++ ) {
                 ret = SKP_Silk_SDK_Decode( psDec, &DecControl, 1, payloadToDec, nBytes, outPtr, &len );
-                if( ret ) {
-                    printf( "\nSKP_Silk_Decode returned %d", ret );
-                }
                 outPtr  += len;
                 tot_len += len;
             }
         }
 
-        packetSize_ms = tot_len / ( DecControl.API_sampleRate / 1000 );
-        tottime += GetHighResolutionTime() - starttime;
-        totPackets++;
-
-        /* Write output to file */
-#ifdef _SYSTEM_IS_BIG_ENDIAN
-        swap_endian( out, tot_len );
-#endif
         fwrite( out, sizeof( SKP_int16 ), tot_len, speechOutFile );
 
         /* Update Buffer */
@@ -463,22 +283,12 @@ int main( int argc, char* argv[] )
         /* Check if the received totBytes is valid */
         if (totBytes < 0 || totBytes > sizeof(payload))
         {
-            
-            fprintf( stderr, "\rPackets decoded:              %d", totPackets );
-            return -1;
+            return 8;
         }
         
         SKP_memmove( payload, &payload[ nBytesPerPacket[ 0 ] ], totBytes * sizeof( SKP_uint8 ) );
         payloadEnd -= nBytesPerPacket[ 0 ];
         SKP_memmove( nBytesPerPacket, &nBytesPerPacket[ 1 ], MAX_LBRR_DELAY * sizeof( SKP_int16 ) );
-
-        if( !quiet ) {
-            fprintf( stderr, "\rPackets decoded:              %d", totPackets );
-        }
-    }
-
-    if( !quiet ) {
-        printf( "\nDecoding Finished \n" );
     }
 
     /* Free decoder */
@@ -488,14 +298,5 @@ int main( int argc, char* argv[] )
     fclose( speechOutFile );
     fclose( bitInFile );
 
-    filetime = totPackets * 1e-3 * packetSize_ms;
-    if( !quiet ) {
-        printf("\nFile length:                 %.3f s", filetime);
-        printf("\nTime for decoding:           %.3f s (%.3f%% of realtime)", 1e-6 * tottime, 1e-4 * tottime / filetime);
-        printf("\n\n");
-    } else {
-        /* print time and % of realtime */
-        printf( "%.3f %.3f %d\n", 1e-6 * tottime, 1e-4 * tottime / filetime, totPackets );
-    }
     return 0;
 }

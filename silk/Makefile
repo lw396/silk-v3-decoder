@@ -47,7 +47,7 @@ ifeq (yes,$(USE_NEON))
 endif
 
 
-CFLAGS	+= -Wall -enable-threads -O3
+CFLAGS	+= -Wall -O3
 
 CFLAGS  += $(call cppflags-from-defines,$(CDEFINES))
 CFLAGS  += $(call cppflags-from-defines,$(ADDED_DEFINES))
@@ -79,7 +79,7 @@ CINCLUDES += interface src test
 VPATH = ./ \
         interface \
         src \
-        test
+		test
 
 # Variable definitions
 LIB_NAME = SKP_SILK_SDK
@@ -93,15 +93,6 @@ else
 	OBJS := $(patsubst %.c,%$(OBJSUFFIX),$(SRCS_C))
 endif
 
-ENCODER_SRCS_C = test/Encoder.c
-ENCODER_OBJS := $(patsubst %.c,%$(OBJSUFFIX),$(ENCODER_SRCS_C))
-
-DECODER_SRCS_C = test/Decoder.c
-DECODER_OBJS := $(patsubst %.c,%$(OBJSUFFIX),$(DECODER_SRCS_C))
-
-SIGNALCMP_SRCS_C = test/signalCompare.c
-SIGNALCMP_OBJS := $(patsubst %.c,%$(OBJSUFFIX),$(SIGNALCMP_SRCS_C))
-
 LIBS = \
 	$(LIB_NAME)
 
@@ -110,24 +101,13 @@ LDLIBDIRS = ./
 # Rules
 default: all
 
-all: $(TARGET) decoder
+all: $(TARGET)
 
 lib: $(TARGET)
 
 $(TARGET): $(OBJS)
 	$(ARCHIVE.cmdline)
 
-encoder$(EXESUFFIX): $(ENCODER_OBJS)
-	$(LINK.o.cmdline)
-
-decoder$(EXESUFFIX): $(DECODER_OBJS)
-	$(LINK.o.cmdline)
-
-signalcompare$(EXESUFFIX): $(SIGNALCMP_OBJS)
-	$(LINK.o.cmdline)
-
 clean:
-	$(RM) $(TARGET)* $(OBJS) $(ENCODER_OBJS) $(DECODER_OBJS) \
-		  $(SIGNALCMP_OBJS) $(TEST_OBJS) \
-		  encoder$(EXESUFFIX) decoder$(EXESUFFIX) signalcompare$(EXESUFFIX)
+	$(RM) $(TARGET)* $(OBJS)
 

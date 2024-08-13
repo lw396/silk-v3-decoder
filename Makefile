@@ -1,11 +1,6 @@
-#
 # Makefile for Silk SDK
-#
-# Copyright (c) 2012, Skype Limited
-# All rights reserved.
-#
 
-#Platform detection and settings
+# Platform detection and settings
 
 EXESUFFIX =
 LIBPREFIX = lib
@@ -29,10 +24,10 @@ CFLAGS  += $(call cppflags-from-includes,$(CINCLUDES))
 LDFLAGS += $(call ldflags-from-ldlibdirs,$(LDLIBDIRS))
 LDLIBS  += $(call ldlibs-from-libs,$(LIBS))
 
-COMPILE.c.cmdline   = $(CC) -c $(ARCH_FLAGS) $(CFLAGS) $(ADDED_CFLAGS) -o $@ $<
-COMPILE.S.cmdline   = $(CC) -c $(ARCH_FLAGS) $(CFLAGS) $(ADDED_CFLAGS) -o $@ $<
-COMPILE.cpp.cmdline = $(CXX) -c $(ARCH_FLAGS) $(CFLAGS) $(ADDED_CFLAGS) -o $@ $<
-LINK.o              = $(CXX) $(ARCH_FLAGS) $(LDPREFLAGS) $(LDFLAGS)
+COMPILE.c.cmdline   = $(CC) -c $(CFLAGS) $(ADDED_CFLAGS) -o $@ $<
+COMPILE.S.cmdline   = $(CC) -c $(CFLAGS) $(ADDED_CFLAGS) -o $@ $<
+COMPILE.cpp.cmdline = $(CXX) -c $(CFLAGS) $(ADDED_CFLAGS) -o $@ $<
+LINK.o              = $(CXX) $(LDPREFLAGS) $(LDFLAGS)
 LINK.o.cmdline      = $(LINK.o) $^ $(LDLIBS) -o $@$(EXESUFFIX)
 ARCHIVE.cmdline     = $(AR) $(ARFLAGS) $@ $^ && $(RANLIB) $@
 
@@ -77,20 +72,5 @@ lib: $(TARGET)
 $(TARGET): $(OBJS)
 	$(ARCHIVE.cmdline)
 
-# Universal binary targets for MacOS
-universal: clean $(TARGET).arm64 $(TARGET).x86_64
-	lipo -create -output $(TARGET) $(TARGET).arm64 $(TARGET).x86_64
-
-$(TARGET).arm64:
-	$(MAKE) ARCH_FLAGS="-arch arm64" all
-	mv $(TARGET) $(TARGET).arm64
-	$(RM) $(OBJS) 
-
-$(TARGET).x86_64:
-	$(MAKE) ARCH_FLAGS="-arch x86_64" all
-	mv $(TARGET) $(TARGET).x86_64
-	$(RM) $(OBJS) 
-
 clean:
 	$(RM) $(TARGET)* $(OBJS)
-
